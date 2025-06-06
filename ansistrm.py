@@ -1,13 +1,9 @@
-#! /usr/bin/env python
-#
-# Copyright (C) 2010 Vinay Sajip. All rights reserved.
-#
-import ctypes
 import logging
-import os
 
 class ColorizingStreamHandler(logging.StreamHandler):
-    # color names to indices
+    """Обработчик логов с цветным форматированием для консоли на Linux."""
+
+    # Цвета и их ANSI-коды
     color_map = {
         'black': 0,
         'red': 1,
@@ -19,128 +15,74 @@ class ColorizingStreamHandler(logging.StreamHandler):
         'white': 7,
     }
 
-    #levels to (background, foreground, bold/intense)
-    if os.name == 'nt':
-        level_map = {
-            logging.DEBUG: (None, 'cyan', True),
-            logging.INFO: (None, 'blue', False),
-            logging.WARNING: (None, 'magena', True),
-            logging.ERROR: (None, 'red', True),
-            logging.CRITICAL: ('red', 'white', True),
-        }
-    else:
-        level_map = {
-            logging.DEBUG: (None, 'cyan', True),
-            logging.INFO: (None, 'blue', False),
-            logging.WARNING: (None, 'magenta', False),
-            logging.ERROR: (None, 'red', False),
-            logging.CRITICAL: ('red', 'white', True),
-        }
-    csi = '\x1b['
-    reset = '\x1b[0m'
+    # Уровни логов и их стили: (фон, текст, жирность)
+    level_map = {
+        logging.DEBUG: (None, 'cyan', True),
+        logging.INFO: (None, 'blue', False),
+        logging.WARNING: (None, 'magenta', False),
+        logging.ERROR: (None, 'red', False),
+        logging.CRITICAL: ('red', 'white', True),
+    }
+
+    # ANSI-последовательности
+    csi = '\x1b['  # Начало ANSI-кода
+    reset = '\x1b[0m'  # Сброс форматирования
 
     @property
     def is_tty(self):
+        """Проверка, является ли поток терминалом."""
         isatty = getattr(self.stream, 'isatty', None)
         return isatty and isatty()
 
     def emit(self, record):
+        """Вывод сообщения лога."""
         try:
             message = self.format(record)
             stream = self.stream
             if not self.is_tty:
                 stream.write(message)
             else:
-                self.output_colorized(message)
+                stream.write(message)  # В Linux цвет уже в message
             stream.write(getattr(self, 'terminator', '\n'))
             self.flush()
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
+        except Exception as e:
             self.handleError(record)
 
-    if os.name != 'nt':
-        def output_colorized(self, message):
-            self.stream.write(message)
-    else:
-        import re
-        ansi_esc = re.compile(r'\x1b\[((?:\d+)(?:;(?:\d+))*)m')
-
-        nt_color_map = {
-            0: 0x00,    # black
-            1: 0x04,    # red
-            2: 0x02,    # green
-            3: 0x06,    # yellow
-            4: 0x01,    # blue
-            5: 0x05,    # magenta
-            6: 0x03,    # cyan
-            7: 0x07,    # white
-        }
-
-        def output_colorized(self, message):
-            parts = self.ansi_esc.split(message)
-            write = self.stream.write
-            h = None
-            fd = getattr(self.stream, 'fileno', None)
-            if fd is not None:
-                fd = fd()
-                if fd in (1, 2): # stdout or stderr
-                    h = ctypes.windll.kernel32.GetStdHandle(-10 - fd)
-            while parts:
-                text = parts.pop(0)
-                if text:
-                    write(text)
-                if parts:
-                    params = parts.pop(0)
-                    if h is not None:
-                        params = [int(p) for p in params.split(';')]
-                        color = 0
-                        for p in params:
-                            if 40 <= p <= 47:
-                                color |= self.nt_color_map[p - 40] << 4
-                            elif 30 <= p <= 37:
-                                color |= self.nt_color_map[p - 30]
-                            elif p == 1:
-                                color |= 0x08 # foreground intensity on
-                            elif p == 0: # reset to default color
-                                color = 0x07
-                            else:
-                                pass # error condition ignored
-                        ctypes.windll.kernel32.SetConsoleTextAttribute(h, color)
-
     def colorize(self, message, record):
+        """Добавление ANSI-кодов для цветного форматирования."""
         if record.levelno in self.level_map:
             bg, fg, bold = self.level_map[record.levelno]
             params = []
             if bg in self.color_map:
-                params.append(str(self.color_map[bg] + 40))
+                params.append(str(self.color_map[bg] + 40))  # Код фона
             if fg in self.color_map:
-                params.append(str(self.color_map[fg] + 30))
+                params.append(str(self.color_map[fg] + 30))  # Код текста
             if bold:
-                params.append('1')
+                params.append('1')  # Жирный текст
             if params:
-                message = ''.join((self.csi, ';'.join(params),
-                                   'm', message, self.reset))
+                message = f"{self.csi}{';'.join(params)}m{message}{self.reset}"
         return message
 
     def format(self, record):
-        message = logging.StreamHandler.format(self, record)
+        """Форматирование сообщения с учетом цвета."""
+        message = super().format(record)
         if self.is_tty:
-            # Don't colorize any traceback
+            # Обрабатываем только первую строку для цвета
             parts = message.split('\n', 1)
             parts[0] = self.colorize(parts[0], record)
             message = '\n'.join(parts)
         return message
 
 def main():
+    """Пример использования обработчика."""
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
     root.addHandler(ColorizingStreamHandler())
-    logging.debug('DEBUG')
-    logging.info('INFO')
-    logging.warning('WARNING')
-    logging.error('ERROR')
-    logging.critical('CRITICAL')
+    # logging.debug('Это отладочное сообщение')
+    # logging.info('Информация для вас')
+    # logging.warning('Осторожно, предупреждение')
+    # logging.error('Ошибка случилась')
+    # logging.critical('Критическая ситуация!')
 
 if __name__ == '__main__':
     main()
