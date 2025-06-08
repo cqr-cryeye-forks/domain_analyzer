@@ -1,133 +1,197 @@
 import logging
 import os
-import re
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
-from crawler.crawler_constants import email_regex
+from crawler.crawler_constants import FILE_EXTENSIONS
+from crawler.crawler_utils import (
+    normalize_url,
+    extract_directories,
+    check_directory_indexing,
+    extract_emails,
+    is_file_url
+)
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger(__name__)
 
 
 class Crawler:
-    """Класс для веб-сканирования сайта с заданного URL."""
+    """Класс для сканирования веб-сайта."""
 
-    # Предопределенные настройки
-    MAX_DEPTH = 100  # Максимальное количество страниц для сканирования
-    TIMEOUT = 5  # Таймаут для HTTP-запросов (секунды)
-    ALLOW_SUBDOMAINS = False  # Не сканировать поддомены
-    ALLOW_REDIRECTS = True  # Следовать редиректам
-    FILE_EXTENSIONS = {'.pdf', '.doc', '.docx', '.txt', '.xls', '.xlsx'}  # Разрешенные расширения файлов
+    ALLOW_SUBDOMAINS = False
 
-    def __init__(self, start_url: str):
-        """Инициализация краулера с начальным URL."""
-        # Нормализация URL
-        if not start_url.startswith(('http://', 'https://')):
-            start_url = f'https://{start_url}'
-        self.start_url = start_url
-        self.base_domain = urlparse(self.start_url).netloc
-        # Структуры данных
-        self.to_crawl = [(self.start_url, 0)]  # (URL, глубина)
-        self.crawled = set()  # Обработанные URL
+    def __init__(
+            self,
+            base_url: str,
+            max_urls: int = 5000,
+            fetch_files: bool = False,
+            subdomains: bool = False,
+            follow_redirects: bool = True,
+            extensions: list[str] = None,
+            exclude_extensions: list[str] = None
+    ):
+        """Инициализация краулера."""
+        self.base_url = self._normalize_base_url(base_url)
+        self.max_urls = max_urls
+        self.fetch_files = fetch_files
+        self.ALLOW_SUBDOMAINS = subdomains
+        self.follow_redirects = follow_redirects
+        self.extensions = extensions if extensions else FILE_EXTENSIONS
+        self.exclude_extensions = exclude_extensions if exclude_extensions else []
         self.data = {
-            'links': [],  # Все найденные ссылки
-            'directories': [],  # Каталоги
-            'files': [],  # Ссылки на файлы
-            'emails': []  # Email-адреса
+            'links': [],
+            'directories': [],
+            'files': [],
+            'emails': [],
+            'externals': [],
+            'directories_with_indexing': [],
+            'messages': {}
         }
-        # Регулярное выражение для email
-        self.email_regex = re.compile(email_regex)
-        logger.info(f'Инициализация краулера для {self.start_url}')
+        self.to_crawl = [(self.base_url, 0)]
+        self.crawled = set()
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT 5.0)'})
 
-    def crawl_site(self) -> dict:
-        """Запуск сканирования сайта. Возвращает собранные данные."""
-        while self.to_crawl and len(self.crawled) < self.MAX_DEPTH:
-            url, depth = self.to_crawl.pop(0)
-            if url not in self.crawled:
-                logger.info(f'Сканирование: {url} (глубина {depth})')
-                self.crawl_url(url, depth)
-                self.crawled.add(url)
-        logger.info(f'Сканирование завершено. Обработано {len(self.crawled)} страниц')
-        return self.data
+    def _normalize_base_url(self, url: str) -> str:
+        """Добавляет схему http, если отсутствует."""
+        if not url.startswith(('http://', 'https://')):
+            url = 'http://' + url
+        return url.rstrip('/')
 
-    def crawl_url(self, url: str, depth: int) -> None:
-        """Обработка одного URL."""
+    def _fetch_file(self, url: str, directory: str) -> bool:
+        """Скачивает файл по URL в указанную папку."""
         try:
-            response = requests.get(
-                url,
-                timeout=self.TIMEOUT,
-                allow_redirects=self.ALLOW_REDIRECTS
+            response = self.session.get(url, timeout=50, allow_redirects=self.follow_redirects)
+            if response.status_code == 200:
+                filename = url.split('/')[-1]
+                filepath = os.path.join(directory, filename)
+                os.makedirs(directory, exist_ok=True)
+                with open(filepath, 'wb') as f:
+                    f.write(response.content)
+                logger.info(f"Файл скачан: {filepath}")
+                return True
+            else:
+                logger.debug(f"Ошибка скачивания {url}: {response.status_code}")
+                return False
+        except requests.RequestException as e:
+            logger.debug(f"Ошибка скачивания {url}: {e}")
+            return False
+
+    def crawl_url(self, url: str) -> bool:
+        """Сканирует одну страницу и извлекает данные."""
+        if is_file_url(url):
+            if url not in self.data['files']:
+                self.data['files'].append(url)
+                logger.debug(f"Найден файл: {url}")
+            if self.fetch_files and not any(url.endswith(ext) for ext in self.exclude_extensions):
+                parsed = urlparse(self.base_url)
+                domain = parsed.netloc.replace('www.', '').split(':')[0]
+                directory = os.path.join(domain, 'Files')
+                self._fetch_file(url, directory)
+            return False
+
+        try:
+            response = self.session.get(
+                url.replace(' ', '%20'),
+                timeout=5,
+                allow_redirects=self.follow_redirects
             )
-            if response.status_code != 200:
-                logger.warning(f'Не удалось загрузить {url}: статус {response.status_code}')
-                return
+            if response.status_code != 200 or 'text/html' not in response.headers.get('Content-Type', ''):
+                if response.status_code in (301, 302) and self.follow_redirects:
+                    redirect_url = response.headers.get('Location')
+                    if redirect_url:
+                        normalized = normalize_url(redirect_url, self.base_url)
+                        if normalized and normalized not in self.crawled:
+                            self.to_crawl.append((normalized, 0))
+                            logger.debug(f"Редирект на: {normalized}")
+                logger.debug(f"Пропуск {url}: код {response.status_code} или не HTML")
+                return False
 
-            # Парсинг страницы
             soup = BeautifulSoup(response.text, 'html.parser')
+            self.data['emails'].extend(extract_emails(response.text))
+            self.data['emails'] = list(set(self.data['emails']))
 
-            # Извлечение email-адресов
-            self.extract_emails(response.text)
+            for link in soup.find_all(['a', 'iframe', 'img'], href=True):
+                href = link.get('href')
+                normalized = normalize_url(href, url)
+                if not normalized:
+                    continue
+                parsed = urlparse(normalized)
+                if parsed.netloc == urlparse(self.base_url).netloc or (
+                        self.ALLOW_SUBDOMAINS and urlparse(self.base_url).netloc in parsed.netloc
+                ):
+                    if is_file_url(normalized):
+                        if normalized not in self.data['files']:
+                            self.data['files'].append(normalized)
+                            if self.fetch_files and not any(
+                                    normalized.endswith(ext) for ext in self.exclude_extensions):
+                                domain = parsed.netloc.replace('www.', '').split(':')[0]
+                                directory = os.path.join(domain, 'Files')
+                                self._fetch_file(normalized, directory)
+                    else:
+                        if normalized not in self.data['links']:
+                            self.data['links'].append(normalized)
+                        if normalized not in self.crawled and normalized not in [x[0] for x in self.to_crawl]:
+                            self.to_crawl.append((normalized, 0))
+                            logger.debug(f"Добавлена ссылка: {normalized}")
+                else:
+                    if normalized not in self.data['externals']:
+                        self.data['externals'].append(normalized)
+                        logger.debug(f"Найдена внешняя ссылка: {normalized}")
 
-            # Обработка ссылок
-            for link_tag in soup.find_all('a', href=True):
-                href = link_tag['href']
-                absolute_url = self.normalize_url(href, url)
-                if absolute_url:
-                    self.process_link(absolute_url, depth)
+            directories = extract_directories(url)
+            for directory in directories:
+                if directory not in self.data['directories']:
+                    self.data['directories'].append(directory)
+                    if check_directory_indexing(directory):
+                        self.data['directories_with_indexing'].append(directory)
+                        logger.info(f"Найден каталог с индексацией: {directory}")
+            return True
 
         except requests.RequestException as e:
-            logger.error(f'Ошибка при загрузке {url}: {e}')
+            logger.debug(f"Ошибка сканирования {url}: {e}")
+            self.data['messages'][f"error_{url}"] = str(e)
+            return False
+        except KeyboardInterrupt:
+            logger.info("Прерывание пользователем при сканировании URL")
+            return False
 
-    def normalize_url(self, href: str, base_url: str) -> str | None:
-        """Преобразование ссылки в абсолютный URL с проверкой домена."""
-        # Преобразование в абсолютный URL
-        absolute_url = urljoin(base_url, href.strip())
-        parsed_url = urlparse(absolute_url)
+    def crawl_site(self) -> dict:
+        """Запускает сканирование сайта."""
+        logger.info(f"Начало сканирования: {self.base_url}")
+        try:
+            while self.to_crawl and len(self.crawled) < self.max_urls:
+                url, _ = self.to_crawl.pop(0)
+                if url in self.crawled:
+                    continue
+                logger.debug(f"Сканирование URL: {url}")
+                self.crawled.add(url)
+                self.crawl_url(url)
+        except KeyboardInterrupt:
+            logger.info("Сканирование прервано пользователем")
 
-        # Проверка домена
-        if not self.ALLOW_SUBDOMAINS:
-            if parsed_url.netloc != self.base_domain:
-                return None
+        self.data['links'] = sorted(list(set(self.data['links'])))
+        self.data['directories'] = sorted(list(set(self.data['directories'])))
+        self.data['files'] = sorted(list(set(self.data['files'])))
+        self.data['externals'] = sorted(list(set(self.data['externals'])))
+        self.data['directories_with_indexing'] = sorted(list(set(self.data['directories_with_indexing'])))
+        self.data['emails'] = sorted(list(set(self.data['emails'])))
 
-        # Удаление якорей
-        if '#' in absolute_url:
-            absolute_url = absolute_url.split('#')[0]
+        if not self.data['links']:
+            self.data['messages']['message_links'] = "Не удалось найти ссылки"
+        if not self.data['directories']:
+            self.data['messages']['message_directories'] = "Не удалось найти каталоги"
+        if not self.data['files']:
+            self.data['messages']['message_files'] = "Не удалось найти файлы"
+        if not self.data['emails']:
+            self.data['messages']['message_emails'] = "Не удалось найти email-адреса"
+        if not self.data['externals']:
+            self.data['messages']['message_externals'] = "Не удалось найти внешние ссылки"
+        if not self.data['directories_with_indexing']:
+            self.data['messages']['message_directories_with_indexing'] = "Не удалось найти каталоги с индексацией"
 
-        return absolute_url
-
-    def process_link(self, url: str, depth: int) -> None:
-        """Обработка найденной ссылки."""
-        if url not in self.data['links']:
-            self.data['links'].append(url)
-
-            # Проверка на файл
-            parsed_url = urlparse(url)
-            _, ext = os.path.splitext(parsed_url.path)
-            if ext.lower() in self.FILE_EXTENSIONS:
-                self.data['files'].append(url)
-                logger.debug(f'Найден файл: {url}')
-
-            # Проверка на каталог
-            if parsed_url.path.endswith('/') and parsed_url.path not in self.data['directories']:
-                self.data['directories'].append(parsed_url.path)
-                logger.debug(f'Найден каталог: {parsed_url.path}')
-
-            # Добавление в очередь, если глубина позволяет
-            if depth + 1 < self.MAX_DEPTH and url not in self.crawled:
-                self.to_crawl.append((url, depth + 1))
-
-    def extract_emails(self, text: str) -> None:
-        """Извлечение email-адресов из текста страницы."""
-        found_emails = self.email_regex.findall(text)
-        for email in found_emails:
-            if email not in self.data['emails']:
-                self.data['emails'].append(email)
-                logger.debug(f'Найден email: {email}')
+        logger.info(f"Сканирование завершено: {len(self.crawled)} URL обработано")
+        return self.data
