@@ -1,9 +1,10 @@
 import argparse
 import logging
 import pathlib
-from pathlib import Path
-from crawler.crawler_core import Crawler
-from crawler.crawler_output import output_results
+
+from crawler.src.crawler_constants import MAIN_DIR, TARGET_FILE
+from crawler.src.crawler_core import Crawler
+from crawler.src.crawler_output import output_results
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,67 +14,81 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def append_unique_url(target_url, urls_input_file=TARGET_FILE):
+    with open(urls_input_file, "r") as f:
+        existing_urls = {line.strip() for line in f}
+
+    if target_url not in existing_urls:
+        with open(urls_input_file, "a") as f:
+            f.write(target_url + "\n")
+        print(f"[+] Добавлен новый URL: {target_url}")
+    else:
+        print(f"[-] URL уже существует: {target_url}")
+
+
 def parse_arguments():
     """Парсинг аргументов командной строки."""
     parser = argparse.ArgumentParser(description="Web crawler for scanning a website.")
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--url",
+        type=str,
         help="URL or domain to start crawling (e.g., example.com or https://example.com)"
     )
     group.add_argument(
-        "--url-file",
-        type=Path,
-        help="Path to a file containing URLs (one per line)"
+        "-uf", "--update-url-file",
+        dest="urls_input_file",
+        type=str,
+        help="Add the given target to the file (if not present) and run all targets from the file",
     )
     parser.add_argument(
         "--output",
         default="results.json",
-        help="Output JSON file (default: results.json)"
+        help="Output JSON file (default: results.json)",
     )
     parser.add_argument(
         "--max-urls",
         type=int,
         default=5000,
-        help="Maximum number of URLs to crawl (default: 5000)"
+        help="Maximum number of URLs to crawl (default: 5000)",
     )
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="Enable verbose output"
+        help="Enable verbose output",
     )
     parser.add_argument(
         "-D", "--debug",
         action="store_true",
-        help="Enable debug mode"
+        help="Enable debug mode",
     )
     parser.add_argument(
         "-f", "--fetch-files",
         action="store_true",
-        help="Download detected files to domain/Files/"
+        help="Download detected files to domain/Files/",
     )
     parser.add_argument(
         "-s", "--subdomains",
         action="store_true",
-        help="Also scan subdomains matching the URL domain"
+        help="Also scan subdomains matching the URL domain",
     )
     parser.add_argument(
         "-r", "--follow-redirect",
         action="store_false",
-        help="Do not follow redirects (default: follow redirects)"
+        help="Do not follow redirects (default: follow redirects)",
     )
     parser.add_argument(
         "-F", "--file-extension",
-        help="Download files with specified extensions (comma-separated, e.g., pdf,doc)"
+        help="Download files with specified extensions (comma-separated, e.g., pdf,doc)",
     )
     parser.add_argument(
         "-d", "--docs-files",
         action="store_true",
-        help="Download document files (pdf, doc, xls, etc.)"
+        help="Download document files (pdf, doc, xls, etc.)",
     )
     parser.add_argument(
         "-E", "--exclude-extensions",
-        help="Exclude files with specified extensions (comma-separated, e.g., jpg,png)"
+        help="Exclude files with specified extensions (comma-separated, e.g., jpg,png)",
     )
     return parser.parse_args()
 
@@ -83,8 +98,12 @@ def main():
     args = parse_arguments()
 
     max_urls: int = int(args.max_urls)
-    urls_input_file = args.url_file
+    urls_input_file = args.urls_input_file
     target_url = args.url
+
+    if urls_input_file:
+        append_unique_url(urls_input_file)
+        target_url = None
 
     # Настройка уровня логирования
     if args.debug:
@@ -117,7 +136,7 @@ def main():
         logger.info(f"Запуск краулера с URL: {target_url}")
     elif urls_input_file:
         try:
-            with urls_input_file.open('r', encoding='utf-8') as f:
+            with TARGET_FILE.open('r', encoding='utf-8') as f:
                 urls = [line.strip() for line in f if line.strip()]
             logger.info(f"Запуск краулера с файлом URL: {urls_input_file} ({len(urls)} URL)")
         except IOError as e:
@@ -134,27 +153,20 @@ def main():
 
     all_results = []
     for url in urls:
-        try:
-            crawler = Crawler(
-                base_url=url,
-                max_urls=max_urls,
-                fetch_files=fetch_files,
-                subdomains=subdomains,
-                follow_redirects=follow_redirect,
-                extensions=extensions,
-                exclude_extensions=exclude_extensions
-            )
-            data = crawler.crawl_site()
-            all_results.append({
-                'target': url,
-                'result': data
-            })
-        except Exception as e:
-            logger.error(f"Ошибка при сканировании {url}: {e}")
-            all_results.append({
-                'target': url,
-                'result': {'messages': {'message_error': f"Ошибка сканирования: {e}"}}
-            })
+        crawler = Crawler(
+            base_url=url,
+            max_urls=max_urls,
+            fetch_files=fetch_files,
+            subdomains=subdomains,
+            follow_redirects=follow_redirect,
+            extensions=extensions,
+            exclude_extensions=exclude_extensions
+        )
+        data = crawler.crawl_site()
+        all_results.append({
+            'target': url,
+            'result': data
+        })
 
     try:
         JSON_OUTPUT: pathlib.Path = pathlib.Path(args.output)

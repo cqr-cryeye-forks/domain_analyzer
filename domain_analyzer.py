@@ -1,10 +1,9 @@
 import argparse
 import logging
 import asyncio
-from pathlib import Path
-from crawler.crawler_core import Crawler
-from crawler.crawler_constants import FILE_EXTENSIONS
-from domain_analyzer.dns_utils import get_A_records, get_NS_records, get_MX_records
+from crawler.src.crawler_core import Crawler
+from crawler.src.crawler_constants import FILE_EXTENSIONS
+from domain_analyzer.dns_utils import get_A_records
 from domain_analyzer.output_utils import save_json
 from domain_analyzer.nmap_utils import scan_host
 from domain_analyzer.constants import DEFAULT_MAX_CRAWL

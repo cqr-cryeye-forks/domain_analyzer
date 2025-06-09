@@ -1,4 +1,4 @@
-from crawler.crawler_main import main
+from crawler.main import main
 
 if __name__ == "__main__":
     main()

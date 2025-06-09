@@ -1,6 +1,6 @@
 import logging
 import socket
-from typing import List, Dict, Optional
+from typing import Optional
 
 import dns.query
 import dns.resolver
@@ -12,7 +12,7 @@ from constants import SOCKET_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-def get_NS_records(domain: str) -> List[Dict[str, str]]:
+def get_NS_records(domain: str) -> list[dict[str, str]]:
     try:
         answers = dns.resolver.resolve(domain, 'NS')
         return [{"hostname": str(rdata.target)} for rdata in answers]
@@ -24,7 +24,7 @@ def get_NS_records(domain: str) -> List[Dict[str, str]]:
         return []
 
 
-def get_MX_records(domain: str) -> List[Dict[str, str]]:
+def get_MX_records(domain: str) -> list[dict[str, str]]:
     try:
         answers = dns.resolver.resolve(domain, 'MX')
         return [{"hostname": str(rdata.exchange), "preference": str(rdata.preference)} for rdata in answers]
@@ -36,7 +36,7 @@ def get_MX_records(domain: str) -> List[Dict[str, str]]:
         return []
 
 
-def get_A_records(domain: str) -> List[Dict[str, str]]:
+def get_A_records(domain: str) -> list[dict[str, str]]:
     try:
         answers = dns.resolver.resolve(domain, 'A')
         return [{"ip": str(rdata.address)} for rdata in answers]
@@ -48,7 +48,7 @@ def get_A_records(domain: str) -> List[Dict[str, str]]:
         return []
 
 
-def get_SPF_record(domain: str) -> Optional[Dict[str, str]]:
+def get_SPF_record(domain: str) -> Optional[dict[str, str]]:
     try:
         answers = dns.resolver.resolve(domain, 'TXT')
         for rdata in answers:
@@ -64,7 +64,7 @@ def get_SPF_record(domain: str) -> Optional[Dict[str, str]]:
         return None
 
 
-def get_PTR_record(ip: str) -> Optional[Dict[str, str]]:
+def get_PTR_record(ip: str) -> Optional[dict[str, str]]:
     try:
         answers = dns.resolver.resolve(dns.reversename.from_address(ip), 'PTR')
         return {"hostname": str(answers[0].target)}
@@ -76,7 +76,7 @@ def get_PTR_record(ip: str) -> Optional[Dict[str, str]]:
         return None
 
 
-def check_zone_transfer(domain: str, ns_servers: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def check_zone_transfer(domain: str, ns_servers: list[dict[str, str]]) -> list[dict[str, str]]:
     results = []
     for ns in ns_servers:
         ns_hostname = ns["hostname"]
@@ -92,7 +92,7 @@ def check_zone_transfer(domain: str, ns_servers: List[Dict[str, str]]) -> List[D
     return results
 
 
-def get_geoip_info(ip: str) -> Optional[Dict[str, str]]:
+def get_geoip_info(ip: str) -> Optional[dict[str, str]]:
     try:
         with geoip2.database.Reader('GeoLite2-Country.mmdb') as reader:
             response = reader.country(ip)

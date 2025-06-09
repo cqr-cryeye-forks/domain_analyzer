@@ -19,4 +19,12 @@ FILE_EXTENSIONS = [
     '.jpeg', '.JPEG', '.png', '.PNG', '.gif', '.GIF', '.exe', '.EXE'
 ]
 
-MAIN_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parents[1]
+MAIN_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parents[2]
+TARGET_FILE: Final[pathlib.Path] = MAIN_DIR / "targets.txt"
+
+message_links = "No links found on the website"
+message_directories = "No directories discovered during the scan"
+message_files = "No downloadable files were identified"
+message_emails = "No email addresses could be extracted"
+message_externals = "No external links detected"
+message_directories_with_indexing = "No indexed directories were found"

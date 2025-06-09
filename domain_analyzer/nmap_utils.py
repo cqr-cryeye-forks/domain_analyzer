@@ -1,7 +1,7 @@
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Dict
+from typing import list, dict
 
 from constants import DEFAULT_NMAP_SCANTYPE, ZENMAP_COMMAND
 
@@ -25,7 +25,7 @@ def check_active_host(ip: str) -> bool:
         return False
 
 
-def scan_host(ip: str, domain: str, scantype: str = DEFAULT_NMAP_SCANTYPE) -> List[Dict[str, str]]:
+def scan_host(ip: str, domain: str, scantype: str = DEFAULT_NMAP_SCANTYPE) -> list[dict[str, str]]:
     output_dir = Path(domain) / "nmap"
     output_dir.mkdir(parents=True, exist_ok=True)
     xml_output = output_dir / f"{ip}.xml"

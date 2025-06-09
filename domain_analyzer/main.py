@@ -1,11 +1,10 @@
-from typing import List, Dict, Set, Any, Optional
+from typing import Any, Optional
 import argparse
 import logging
 import socket
 import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
-from colorama import init, Fore
 from dns_utils import get_NS_records, get_MX_records, get_A_records, get_SPF_record, get_PTR_record, \
     check_zone_transfer, get_geoip_info
 from nmap_utils import check_active_host, scan_host, run_zenmap
@@ -33,22 +32,20 @@ class DomainAnalyzer:
         self.robtex = args.robtex_domains
         self.all_robtex = args.all_robtex
         self.world_domination = args.world_domination
-        self.domain_data: Dict[str, Any] = {
+        self.domain_data: dict[str, Any] = {
             "domain": self.domain,
             "ips": [],
             "domain_info": {"subdomains": [], "emails": []}
         }
-        init(autoreset=True)
 
     async def analyze_domain(self) -> None:
-        logger.info(f"{Fore.CYAN}Starting analysis for {self.domain}")
         ns_records = get_NS_records(self.domain)
         mx_records = get_MX_records(self.domain)
         a_records = get_A_records(self.domain)
         spf_record = get_SPF_record(self.domain)
 
-        ip_set: Set[str] = {record["ip"] for record in a_records}
-        subdomains: List[str] = [self.domain]
+        ip_set: set[str] = {record["ip"] for record in a_records}
+        subdomains: list[str] = [self.domain]
 
         if not self.no_subdomains:
             subdomains.extend(await self._find_subdomains())
@@ -80,9 +77,8 @@ class DomainAnalyzer:
             run_zenmap(self.domain)
 
         save_json(self.domain_data, self.output_file)
-        logger.info(f"{Fore.GREEN}Analysis complete for {self.domain}")
 
-    async def _find_subdomains(self) -> List[str]:
+    async def _find_subdomains(self) -> list[str]:
         subdomains = []
         async with aiohttp.ClientSession() as session:
             tasks = [
@@ -102,8 +98,8 @@ class DomainAnalyzer:
             pass
         return None
 
-    def _collect_ip_info(self, ip: str, ns_records: List[Dict[str, str]], mx_records: List[Dict[str, str]],
-                         spf_record: Optional[Dict[str, str]]) -> Dict[str, Any]:
+    def _collect_ip_info(self, ip: str, ns_records: list[dict[str, str]], mx_records: list[dict[str, str]],
+                         spf_record: Optional[dict[str, str]]) -> dict[str, Any]:
         info = {"ip": ip, "info": []}
 
         for record in get_A_records(self.domain) + get_A_records(f"www.{self.domain}"):
@@ -169,7 +165,7 @@ def parse_args() -> argparse.Namespace:
 def setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
-        format=f"{Fore.BLUE}%(asctime)s{Fore.RESET} [%(levelname)s] %(message)s",
+        format=f"%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 

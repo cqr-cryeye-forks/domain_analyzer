@@ -1,5 +1,4 @@
 import logging
-from typing import List, Dict, Set
 from urllib.parse import urlencode
 
 import requests
@@ -7,7 +6,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def find_robtex_domains(domain: str, ns_servers: List[Dict[str, str]], all_robtex: bool = False) -> Set[str]:
+def find_robtex_domains(domain: str, ns_servers: list[dict[str, str]], all_robtex: bool = False) -> set[str]:
     related_domains = set()
     base_url = "https://www.robtex.com/dns-lookup/"
 

@@ -5,8 +5,9 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from crawler.crawler_constants import FILE_EXTENSIONS
-from crawler.crawler_utils import (
+from crawler.src.crawler_constants import FILE_EXTENSIONS, message_links, message_directories, message_files, \
+    message_emails, message_externals, message_directories_with_indexing
+from crawler.src.crawler_utils import (
     normalize_url,
     extract_directories,
     check_directory_indexing,
@@ -103,7 +104,7 @@ class Crawler:
                 if response.status_code in (301, 302) and self.follow_redirects:
                     redirect_url = response.headers.get('Location')
                     if redirect_url:
-                        normalized = normalize_url(redirect_url, self.base_url)
+                        normalized = normalize_url(redirect_url, self.base_url, allow_subdomains=self.ALLOW_SUBDOMAINS)
                         if normalized and normalized not in self.crawled:
                             self.to_crawl.append((normalized, 0))
                             logger.debug(f"Редирект на: {normalized}")
@@ -116,7 +117,7 @@ class Crawler:
 
             for link in soup.find_all(['a', 'iframe', 'img'], href=True):
                 href = link.get('href')
-                normalized = normalize_url(href, url)
+                normalized = normalize_url(href, url, allow_subdomains=self.ALLOW_SUBDOMAINS)
                 if not normalized:
                     continue
                 parsed = urlparse(normalized)
@@ -173,25 +174,27 @@ class Crawler:
         except KeyboardInterrupt:
             logger.info("Сканирование прервано пользователем")
 
-        self.data['links'] = sorted(list(set(self.data['links'])))
-        self.data['directories'] = sorted(list(set(self.data['directories'])))
-        self.data['files'] = sorted(list(set(self.data['files'])))
-        self.data['externals'] = sorted(list(set(self.data['externals'])))
-        self.data['directories_with_indexing'] = sorted(list(set(self.data['directories_with_indexing'])))
-        self.data['emails'] = sorted(list(set(self.data['emails'])))
+        self.data['links'] = sorted(set(self.data['links']))
+        self.data['directories'] = sorted(set(self.data['directories']))
+        self.data['files'] = sorted(set(self.data['files']))
+        self.data['externals'] = sorted(set(self.data['externals']))
+        self.data['directories_with_indexing'] = sorted(set(self.data['directories_with_indexing']))
+        self.data['emails'] = sorted(set(self.data['emails']))
 
         if not self.data['links']:
-            self.data['messages']['message_links'] = "Не удалось найти ссылки"
+            self.data['messages']['message_links'] = message_links
         if not self.data['directories']:
-            self.data['messages']['message_directories'] = "Не удалось найти каталоги"
+            self.data['messages']['message_directories'] = message_directories
         if not self.data['files']:
-            self.data['messages']['message_files'] = "Не удалось найти файлы"
+            self.data['messages']['message_files'] = message_files
         if not self.data['emails']:
-            self.data['messages']['message_emails'] = "Не удалось найти email-адреса"
+            self.data['messages']['message_emails'] = message_emails
         if not self.data['externals']:
-            self.data['messages']['message_externals'] = "Не удалось найти внешние ссылки"
+            self.data['messages']['message_externals'] = message_externals
         if not self.data['directories_with_indexing']:
-            self.data['messages']['message_directories_with_indexing'] = "Не удалось найти каталоги с индексацией"
+            self.data['messages']['message_directories_with_indexing'] = message_directories_with_indexing
+
+        self.data = {k: v for k, v in self.data.items() if not isinstance(v, list) or v}
 
         logger.info(f"Сканирование завершено: {len(self.crawled)} URL обработано")
         return self.data

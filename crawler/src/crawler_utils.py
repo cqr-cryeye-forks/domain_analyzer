@@ -5,15 +5,13 @@ from urllib.parse import urlparse, urljoin
 
 import requests
 
-from crawler.crawler_constants import FILE_EXTENSIONS
-from crawler.crawler_core import Crawler
+from crawler.src.crawler_constants import FILE_EXTENSIONS
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
 
-def normalize_url(href: str, base_url: str) -> str | None:
-    """Преобразует ссылку в абсолютный URL с проверкой валидности."""
+def normalize_url(href: str, base_url: str, allow_subdomains: bool = False) -> str | None:
     try:
         absolute_url = urljoin(base_url, href.strip())
         parsed_url = urlparse(absolute_url)
@@ -21,8 +19,8 @@ def normalize_url(href: str, base_url: str) -> str | None:
             return None
         absolute_url = absolute_url.split('#')[0]
         base_domain = urlparse(base_url).netloc
-        if not Crawler.ALLOW_SUBDOMAINS and parsed_url.netloc != base_domain:
-            if not (Crawler.ALLOW_SUBDOMAINS and base_domain in parsed_url.netloc):
+        if not allow_subdomains and parsed_url.netloc != base_domain:
+            if not (allow_subdomains and base_domain in parsed_url.netloc):
                 return None
         return absolute_url
     except ValueError as e:
